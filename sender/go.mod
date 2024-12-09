@@ -1,4 +1,4 @@
-module github.com/opencomply/og-task-template
+module github.com/opencomply/og-task-syft
 
 go 1.23.2
 
