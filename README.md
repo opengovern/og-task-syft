@@ -30,14 +30,15 @@ Also If you want you can install additional tools or libraries.
 ```dockerfile
 # Do not change the code below
 # Run The Sender Go Application
-FROM golang:1.23-alpine AS final
+FROM golang:1.23-alpine 
 # Copy the source code
 COPY . .
 # Download the dependencies
-RUN go mod download
+RUN cd sender && go mod download -x
 # Build the Go application
-RUN  go build -o sender .
-ENTRYPOINT ["/sender"]
+RUN cd sender &&   go build -o task .
+
+ENTRYPOINT ["./sender/task"]
 ```
 
 We use [Dockerfile](./Dockerfile) for Building Image.
