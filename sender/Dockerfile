@@ -1,7 +1,6 @@
 # Do not change the code below
 # Run The Sender Go Application
 FROM golang:1.23-alpine AS Final
-RUN cd /sender
 # Copy and download dependencies
 COPY go.mod go.sum ./
 RUN go mod download
