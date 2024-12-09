@@ -4,7 +4,8 @@ FROM golang:1.23-alpine
 # Copy the source code
 COPY . .
 # Download the dependencies
-RUN go mod download -x
+RUN cd sender && go mod download -x
 # Build the Go application
-RUN  go build -o sender .
+RUN    go build -o sender .
+
 ENTRYPOINT ["/sender"]
