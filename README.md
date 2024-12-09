@@ -30,7 +30,7 @@ Also If you want you can install additional tools or libraries.
 ```dockerfile
 # Do not change the code below
 # Run The Sender Go Application
-FROM golang:1.23-alpine AS Final
+FROM golang:1.23-alpine AS final
 # Copy the source code
 COPY . .
 # Download the dependencies
