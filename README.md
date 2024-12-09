@@ -8,7 +8,7 @@ You can fork this repository and create your own task image.
 Task is a set of instructions that can be executed by Opencomply Platform.
 It should be run once every time it is executed. And have an output that can be written to a file.
 
-Defining a task has 2 main parts:
+Defining a task has one main parts:
 
 ### 1. Code
 
@@ -21,26 +21,24 @@ echo "Hello World"
 echo "This is an example task"
 ```
 
-### 2. Write Dockerfile
+### 2. Build Image
 
-Second part is the Dockerfile that will be used to build the task image. It should have the following structure:
+Second part is the Dockerfile that will be used to build the task image.
+You can use any base image you want, but it should have the necessary tools to run the go code.
+Also If you want you can install additional tools or libraries.
 
 ```dockerfile
-# Use a base image
 # Do not change the code below
 # Run The Sender Go Application
 FROM golang:1.23-alpine AS Final
-RUN cd /sender
-# Copy and download dependencies
-COPY go.mod go.sum ./
-RUN go mod download
-
 # Copy the source code
 COPY . .
+# Download the dependencies
+RUN go mod download
 # Build the Go application
 RUN  go build -o sender .
 ENTRYPOINT ["/sender"]
 ```
 
-We use [Dockerfile](./Dockerfile) as an example.
+We use [Dockerfile](./Dockerfile) for Building Image.
 
