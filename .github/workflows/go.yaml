@@ -39,8 +39,8 @@ jobs:
           password: ${{ secrets.GHCR_PAT }}
 
       - name: Build and Push Docker Image
+        working-directory: sender
         uses: docker/build-push-action@v4
-        working-directory: ./sender
         with:
           context: .
           push: true
