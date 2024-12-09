@@ -37,9 +37,9 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_PAT }}
-
+      - name: Switch to the Dockerfile directory
+        run: cd ./sender
       - name: Build and Push Docker Image
-        working-directory: sender
         uses: docker/build-push-action@v4
         with:
           context: .
