@@ -6,6 +6,6 @@ COPY . .
 # Download the dependencies
 RUN cd sender && go mod download -x
 # Build the Go application
-RUN    go build -o sender .
+RUN cd sender &&   go build -o sender .
 
-ENTRYPOINT ["/sender"]
+ENTRYPOINT ["./sender/sender"]
