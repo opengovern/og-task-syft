@@ -47,6 +47,6 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: |
             ghcr.io/${{ github.repository_owner }}/og-task-syft:${{ steps.tag_version.outputs.new_tag }}
-          file: ./Dockerfile
+          file: ./sender/Dockerfile
           cache-from: type=gha
           cache-to: type=gha,mode=max
