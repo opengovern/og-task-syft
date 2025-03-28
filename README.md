@@ -13,7 +13,7 @@ Defining a task has one main parts:
 ### 1. Code
 
 First part is the code that will be executed. It can be a shell script, python script, or any other executable file.
-We Use [task.sh](./sender/task.sh) as an example.
+We Use [task.sh](worker/task.sh) as an example.
 
 ```shell
 #!/bin/bash
