@@ -6,6 +6,7 @@ require (
 	github.com/nats-io/nats.go v1.38.0
 	github.com/opencontainers/image-spec v1.1.0
 	github.com/opengovern/og-util v1.14.2
+	github.com/opengovern/opensecurity v0.0.0-20250328105338-c1615913d6ee
 	github.com/opengovern/resilient-bridge v0.0.0-20241215000157-ad74ef2e3cbe
 	github.com/opensearch-project/opensearch-go/v2 v2.3.0
 	github.com/spf13/cobra v1.8.1
@@ -126,6 +127,7 @@ require (
 	github.com/labstack/echo/v4 v4.12.0 // indirect
 	github.com/labstack/gommon v0.4.2 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
+	github.com/lib/pq v1.10.9 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.15 // indirect
@@ -143,7 +145,6 @@ require (
 	github.com/oklog/run v1.1.0 // indirect
 	github.com/olekukonko/tablewriter v0.0.5 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
-	github.com/opengovern/opensecurity v0.0.0-20250328105338-c1615913d6ee // indirect
 	github.com/pelletier/go-toml v1.9.5 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pkg/errors v0.9.1 // indirect
