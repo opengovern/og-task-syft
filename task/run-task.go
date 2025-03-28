@@ -147,12 +147,12 @@ func ScanArtifact(esClient opengovernance.Client, logger *zap.Logger, artifact A
 		}
 	}()
 
-	err = fetchImage(registryType, fmt.Sprintf("run-%v", request.TaskDefinition.RunID), artifact.OciArtifactUrl, getCredsFromParams(request.TaskDefinition.Params))
-	if err != nil {
-		logger.Error("failed to fetch image", zap.String("image", artifact.OciArtifactUrl), zap.Error(err))
-		err = fmt.Errorf("failed while fetching image: %s", err.Error())
-		return
-	}
+	//err = fetchImage(registryType, fmt.Sprintf("run-%v", request.TaskDefinition.RunID), artifact.OciArtifactUrl, getCredsFromParams(request.TaskDefinition.Params))
+	//if err != nil {
+	//	logger.Error("failed to fetch image", zap.String("image", artifact.OciArtifactUrl), zap.Error(err))
+	//	err = fmt.Errorf("failed while fetching image: %s", err.Error())
+	//	return
+	//}
 
 	logger.Info("Scanning image", zap.String("image", "image.tar"))
 
