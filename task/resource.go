@@ -1,12 +1,12 @@
 package task
 
-type OciArtifactVulnerabilities struct {
-	ImageURL        string               `json:"imageUrl"`
-	ArtifactDigest  string               `json:"artifactDigest"`
-	Vulnerabilities []VulnerabilityMatch `json:"Vulnerabilities"`
+type ArtifactSbom struct {
+	ImageURL       string      `json:"imageUrl"`
+	ArtifactDigest string      `json:"artifactDigest"`
+	Sbom           interface{} `json:"sbom"`
 }
 
-func (r OciArtifactVulnerabilities) UniqueID() string {
+func (r ArtifactSbom) UniqueID() string {
 	return r.ArtifactDigest
 }
 

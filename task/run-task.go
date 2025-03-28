@@ -154,10 +154,8 @@ func ScanArtifact(esClient opengovernance.Client, logger *zap.Logger, artifact A
 	//	return
 	//}
 
-	logger.Info("Scanning image", zap.String("image", "image.tar"))
-
 	// Run the Grype command
-	cmd := exec.Command("syft", artifact.OciArtifactUrl, "--scope", "all-layers", "-o", "syft-json")
+	cmd := exec.Command("syft", artifact.OciArtifactUrl, "--scope", "all-layers", "-o", "spdx-json")
 
 	output, err := cmd.CombinedOutput()
 	logger.Info("output", zap.String("output", string(output)))
@@ -167,15 +165,15 @@ func ScanArtifact(esClient opengovernance.Client, logger *zap.Logger, artifact A
 		return
 	}
 
-	var grypeOutput GrypeOutput
-	err = json.Unmarshal(output, &grypeOutput)
+	var sbom interface{}
+	err = json.Unmarshal(output, &sbom)
 
-	logger.Info("grypeOutput", zap.Any("grypeOutput", grypeOutput))
+	logger.Info("sbom", zap.Any("sbom", sbom))
 
-	result := OciArtifactVulnerabilities{
-		ImageURL:        artifact.OciArtifactUrl,
-		ArtifactDigest:  artifact.ArtifactDigest,
-		Vulnerabilities: grypeOutput.Matches,
+	result := ArtifactSbom{
+		ImageURL:       artifact.OciArtifactUrl,
+		ArtifactDigest: artifact.ArtifactDigest,
+		Sbom:           sbom,
 	}
 
 	esResult := &es.TaskResult{
