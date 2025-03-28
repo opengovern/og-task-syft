@@ -1,13 +1,14 @@
 package task
 
 type ArtifactSbom struct {
-	ImageURL       string      `json:"imageUrl"`
-	ArtifactDigest string      `json:"artifactDigest"`
-	Sbom           interface{} `json:"sbom"`
+	ImageURL   string      `json:"imageUrl"`
+	ArtifactID string      `json:"artifactId"`
+	SbomFormat string      `json:"sbomFormat"`
+	Sbom       interface{} `json:"sbom"`
 }
 
 func (r ArtifactSbom) UniqueID() string {
-	return r.ArtifactDigest
+	return r.ArtifactID
 }
 
 type GrypeOutput struct {

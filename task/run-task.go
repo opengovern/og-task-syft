@@ -23,12 +23,12 @@ import (
 
 type Artifact struct {
 	OciArtifactUrl string `json:"oci_artifact_url"`
-	ArtifactDigest string `json:"artifact_digest"`
+	ArtifactID     string `json:"artifact_id"`
 }
 
 type ArtifactResult struct {
 	OciArtifactUrl string `json:"oci_artifact_url"`
-	ArtifactDigest string `json:"artifact_digest"`
+	ArtifactID     string `json:"artifact_id"`
 	Result         string `json:"result"`
 	FailureReason  string `json:"failure_message"`
 }
@@ -108,7 +108,7 @@ func RunTask(ctx context.Context, jq *jq.JobQueue, coreServiceEndpoint string, e
 			err = fmt.Errorf("failed Marshaling task result: %s", err.Error())
 			return err
 		}
-		if _, err := jq.Produce(ctx, envs.ResultTopicName, responseJson, fmt.Sprintf("task-run-update-%s-%d", artifact.ArtifactDigest, request.TaskDefinition.RunID)); err != nil {
+		if _, err := jq.Produce(ctx, envs.ResultTopicName, responseJson, fmt.Sprintf("task-run-update-%s-%d", artifact.ArtifactID, request.TaskDefinition.RunID)); err != nil {
 			logger.Error("failed to publish job result", zap.String("jobResult", string(responseJson)), zap.Error(err))
 		}
 	}
@@ -132,7 +132,7 @@ func ScanArtifact(esClient opengovernance.Client, logger *zap.Logger, artifact A
 		if err == nil {
 			taskResult.Artifacts = append(taskResult.Artifacts, ArtifactResult{
 				OciArtifactUrl: artifact.OciArtifactUrl,
-				ArtifactDigest: artifact.ArtifactDigest,
+				ArtifactID:     artifact.ArtifactID,
 				Result:         fmt.Sprintf("Responses stored in elasticsearch index %s by id: %v", index, id),
 			})
 			taskResult.ArtifactsDoneNumber += 1
@@ -140,7 +140,7 @@ func ScanArtifact(esClient opengovernance.Client, logger *zap.Logger, artifact A
 		} else {
 			taskResult.Artifacts = append(taskResult.Artifacts, ArtifactResult{
 				OciArtifactUrl: artifact.OciArtifactUrl,
-				ArtifactDigest: artifact.ArtifactDigest,
+				ArtifactID:     artifact.ArtifactID,
 				FailureReason:  err.Error(),
 			})
 			taskResult.ArtifactsDoneNumber += 1
@@ -171,9 +171,10 @@ func ScanArtifact(esClient opengovernance.Client, logger *zap.Logger, artifact A
 	logger.Info("sbom", zap.Any("sbom", sbom))
 
 	result := ArtifactSbom{
-		ImageURL:       artifact.OciArtifactUrl,
-		ArtifactDigest: artifact.ArtifactDigest,
-		Sbom:           sbom,
+		ImageURL:   artifact.OciArtifactUrl,
+		ArtifactID: artifact.ArtifactID,
+		SbomFormat: "spdx",
+		Sbom:       sbom,
 	}
 
 	esResult := &es.TaskResult{
@@ -243,7 +244,7 @@ func GetArtifactsFromQueryID(coreServiceClient coreClient.CoreServiceClient, par
 						artifact.OciArtifactUrl = rc.(string)
 					}
 					if queryResponse.Headers[i] == "digest" {
-						artifact.ArtifactDigest = rc.(string)
+						artifact.ArtifactID = rc.(string)
 					}
 				}
 				artifacts = append(artifacts, artifact)
@@ -284,7 +285,7 @@ func GetArtifactsFromInlineQuery(coreServiceClient coreClient.CoreServiceClient,
 						artifact.OciArtifactUrl = rc.(string)
 					}
 					if queryResponse.Headers[i] == "digest" {
-						artifact.ArtifactDigest = rc.(string)
+						artifact.ArtifactID = rc.(string)
 					}
 				}
 				artifacts = append(artifacts, artifact)
