@@ -40,7 +40,6 @@ type TaskResult struct {
 }
 
 func RunTask(ctx context.Context, jq *jq.JobQueue, coreServiceEndpoint string, esClient opengovernance.Client, logger *zap.Logger, request tasks.TaskRequest, response *scheduler.TaskResponse) error {
-	registryType := "ghcr"
 	var artifacts []Artifact
 	var artifactsUrls []string
 	var err error
@@ -81,11 +80,6 @@ func RunTask(ctx context.Context, jq *jq.JobQueue, coreServiceEndpoint string, e
 			artifacts = append(artifacts, a)
 		}
 	}
-	if v, ok := request.TaskDefinition.Params["registry_type"]; ok {
-		if vv, ok := v.(string); ok {
-			registryType = vv
-		}
-	}
 
 	for _, ar := range artifacts {
 		artifactsUrls = append(artifactsUrls, ar.OciArtifactUrl)
@@ -95,7 +89,7 @@ func RunTask(ctx context.Context, jq *jq.JobQueue, coreServiceEndpoint string, e
 	taskResult := &TaskResult{}
 
 	for _, artifact := range artifacts {
-		ScanArtifact(esClient, logger, artifact, registryType, request, taskResult)
+		ScanArtifact(esClient, logger, artifact, request, taskResult)
 		jsonBytes, err := json.Marshal(taskResult)
 		if err != nil {
 			return err
@@ -122,7 +116,7 @@ func RunTask(ctx context.Context, jq *jq.JobQueue, coreServiceEndpoint string, e
 	return nil
 }
 
-func ScanArtifact(esClient opengovernance.Client, logger *zap.Logger, artifact Artifact, registryType string, request tasks.TaskRequest, taskResult *TaskResult) {
+func ScanArtifact(esClient opengovernance.Client, logger *zap.Logger, artifact Artifact, request tasks.TaskRequest, taskResult *TaskResult) {
 	logger.Info("Fetching image", zap.String("image", artifact.OciArtifactUrl))
 
 	var err error
