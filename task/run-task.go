@@ -186,7 +186,7 @@ func ScanArtifact(esClient opengovernance.Client, logger *zap.Logger, artifact A
 	}
 
 	esResult := &es.TaskResult{
-		PlatformID:   fmt.Sprintf("%s:::%s:::%s", request.TaskDefinition.TaskType, request.TaskDefinition.ResultType, result.UniqueID()),
+		PlatformID:   fmt.Sprintf("%s:::%s:::%s", request.TaskDefinition.TaskType, "artifact_sbom", result.UniqueID()),
 		ResourceID:   result.UniqueID(),
 		ResourceName: artifact.OciArtifactUrl,
 		Description:  result,
@@ -199,9 +199,41 @@ func ScanArtifact(esClient opengovernance.Client, logger *zap.Logger, artifact A
 
 	keys, idx := esResult.KeysAndIndex()
 	esResult.EsID = es.HashOf(keys...)
-	esResult.EsIndex = idx
+	esResult.EsIndex = "artifact_sbom"
 
-	err = sendDataToOpensearch(esClient.ES(), esResult)
+	err = sendDataToOpensearch(esClient.ES(), esResult, "artifact_sbom")
+	if err != nil {
+		logger.Error("failed sending data to OpenSearch", zap.Error(err))
+		err = fmt.Errorf("failed sending data to OpenSearch: %s", err.Error())
+		return
+	}
+	index = idx
+	id = es.HashOf(keys...)
+
+	// add packages
+	packagesResult := ArtifactPackageList{
+		ImageURL:   artifact.OciArtifactUrl,
+		ArtifactID: artifact.ArtifactID,
+		Packages:   packages,
+	}
+
+	packagesEsResult := &es.TaskResult{
+		PlatformID:   fmt.Sprintf("%s:::%s:::%s", request.TaskDefinition.TaskType, "artifact_package_list", packagesResult.UniqueID()),
+		ResourceID:   result.UniqueID(),
+		ResourceName: artifact.OciArtifactUrl,
+		Description:  packagesResult,
+		ResultType:   strings.ToLower(request.TaskDefinition.ResultType),
+		TaskType:     request.TaskDefinition.TaskType,
+		Metadata:     nil,
+		DescribedAt:  time.Now().Unix(),
+		DescribedBy:  strconv.FormatUint(uint64(request.TaskDefinition.RunID), 10),
+	}
+
+	keys, idx = packagesEsResult.KeysAndIndex()
+	packagesEsResult.EsID = es.HashOf(keys...)
+	packagesEsResult.EsIndex = "artifact_package_list"
+
+	err = sendDataToOpensearch(esClient.ES(), packagesEsResult, "artifact_package_list")
 	if err != nil {
 		logger.Error("failed sending data to OpenSearch", zap.Error(err))
 		err = fmt.Errorf("failed sending data to OpenSearch: %s", err.Error())
@@ -305,7 +337,7 @@ func GetArtifactsFromInlineQuery(coreServiceClient coreClient.CoreServiceClient,
 	}
 }
 
-func GetPackageIDs(cyclonedxSbom interface{}) ([]string, error) {
+func GetPackageIDs(cyclonedxSbom interface{}) ([]Package, error) {
 	sbomBytes, err := GetBytesFromInterface(cyclonedxSbom)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get bytes from SbomCyclonedxJson: %w", err)
@@ -318,7 +350,7 @@ func GetPackageIDs(cyclonedxSbom interface{}) ([]string, error) {
 		return nil, fmt.Errorf("decoding CycloneDX BOM: %w", err) // Return error
 	}
 
-	var packageIds []string
+	var packageIds []Package
 	if bom.Components != nil {
 		for _, c := range *bom.Components {
 			var standardEcosystem string
@@ -331,7 +363,11 @@ func GetPackageIDs(cyclonedxSbom interface{}) ([]string, error) {
 			} else {
 				standardEcosystem = "" // Use default if PURL is missing
 			}
-			packageIds = append(packageIds, fmt.Sprintf("%s:%s:%s", standardEcosystem, c.Name, c.Version))
+			packageIds = append(packageIds, Package{
+				Ecosystem: standardEcosystem,
+				Name:      c.Name,
+				Version:   c.Version,
+			})
 		}
 	}
 	return packageIds, nil

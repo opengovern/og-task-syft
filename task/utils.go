@@ -63,13 +63,13 @@ func showFiles(dir string) error {
 	return nil
 }
 
-func sendDataToOpensearch(client *opensearch.Client, doc es.Doc) error {
+func sendDataToOpensearch(client *opensearch.Client, doc es.Doc, index string) error {
 	docJSON, err := json.Marshal(doc)
 	if err != nil {
 		return err
 	}
 
-	keys, index := doc.KeysAndIndex()
+	keys, _ := doc.KeysAndIndex()
 
 	// Use the opensearchapi.IndexRequest to index the document
 	req := opensearchapi.IndexRequest{
