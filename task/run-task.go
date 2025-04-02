@@ -3,6 +3,7 @@ package task
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/CycloneDX/cyclonedx-go"
 	"github.com/opengovern/og-task-syft/envs"
@@ -15,6 +16,7 @@ import (
 	coreApi "github.com/opengovern/opensecurity/services/core/api"
 	coreClient "github.com/opengovern/opensecurity/services/core/client"
 	"github.com/opengovern/opensecurity/services/tasks/scheduler"
+	purl "github.com/package-url/packageurl-go"
 	"go.uber.org/zap"
 	"golang.org/x/net/context"
 	"io"
@@ -319,7 +321,17 @@ func GetPackageIDs(cyclonedxSbom interface{}) ([]string, error) {
 	var packageIds []string
 	if bom.Components != nil {
 		for _, c := range *bom.Components {
-			packageIds = append(packageIds, fmt.Sprintf("%s:%s", c.Name, c.Version))
+			var standardEcosystem string
+			var err error
+			if c.PackageURL != "" {
+				standardEcosystem, err = getStandardEcosystemFromPURL(c.PackageURL)
+				if err != nil {
+					standardEcosystem = ""
+				}
+			} else {
+				standardEcosystem = "" // Use default if PURL is missing
+			}
+			packageIds = append(packageIds, fmt.Sprintf("%s:%s:%s", standardEcosystem, c.Name, c.Version))
 		}
 	}
 	return packageIds, nil
@@ -351,4 +363,41 @@ func GetBytesFromInterface(source interface{}) ([]byte, error) {
 	}
 
 	return data, nil
+}
+
+// --- PURL Parsing and Ecosystem Mapping ---
+var purlTypeToOSVEcosystem = map[string]string{
+	"almalinux": "AlmaLinux", "alpine": "Alpine", "apk": "Alpine", "bitnami": "Bitnami", "cargo": "crates.io",
+	"conan": "ConanCenter", "cran": "CRAN", "deb": "Debian", "composer": "Packagist", "gem": "RubyGems",
+	"generic": "OSS-Fuzz", "ghc": "GHC", "github": "OSS-Fuzz", "go": "Go", "golang": "Go",
+	"hackage": "Hackage", "hex": "Hex", "linux": "Linux", "mageia": "Mageia", "maven": "Maven",
+	"npm": "npm", "nuget": "NuGet", "opensuse": "openSUSE", "photon": "Photon OS", "pub": "Pub",
+	"pypi": "PyPI", "rhel": "Red Hat", "rocky": "Rocky Linux", "rpm": "OSS-Fuzz", "suse": "SUSE",
+	"swift": "SwiftURL", "ubuntu": "Ubuntu", "wolfi": "Wolfi",
+}
+var distroQualifierToOSVEcosystem = map[string]string{
+	"almalinux": "AlmaLinux", "alpine": "Alpine", "debian": "Debian", "mageia": "Mageia",
+	"opensuse": "openSUSE", "photon": "Photon OS", "rhel": "Red Hat",
+	"rockylinux": "Rocky Linux", "suse": "SUSE", "ubuntu": "Ubuntu", "wolfi": "Wolfi",
+}
+
+func getStandardEcosystemFromPURL(purlString string) (string, error) {
+	if purlString == "" {
+		return "", errors.New("PURL string is empty")
+	}
+	purlObj, err := purl.FromString(purlString)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse PURL '%s': %w", purlString, err)
+	}
+	purlTypeLower := strings.ToLower(purlObj.Type)
+	if distro, ok := purlObj.Qualifiers.Map()["distro"]; ok && distro != "" {
+		distroLower := strings.ToLower(distro)
+		if ecosystem, found := distroQualifierToOSVEcosystem[distroLower]; found {
+			return ecosystem, nil
+		}
+	}
+	if ecosystem, found := purlTypeToOSVEcosystem[purlTypeLower]; found {
+		return ecosystem, nil
+	}
+	return "", fmt.Errorf("cannot map PURL type '%s' (from PURL '%s') to a standard OSV ecosystem", purlTypeLower, purlString)
 }
