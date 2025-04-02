@@ -1,8 +1,10 @@
 package task
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/CycloneDX/cyclonedx-go"
 	"github.com/opengovern/og-task-syft/envs"
 	authApi "github.com/opengovern/og-util/pkg/api"
 	"github.com/opengovern/og-util/pkg/es"
@@ -15,6 +17,7 @@ import (
 	"github.com/opengovern/opensecurity/services/tasks/scheduler"
 	"go.uber.org/zap"
 	"golang.org/x/net/context"
+	"io"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -141,13 +144,6 @@ func ScanArtifact(esClient opengovernance.Client, logger *zap.Logger, artifact A
 		}
 	}()
 
-	//err = fetchImage(registryType, fmt.Sprintf("run-%v", request.TaskDefinition.RunID), artifact.OciArtifactUrl, getCredsFromParams(request.TaskDefinition.Params))
-	//if err != nil {
-	//	logger.Error("failed to fetch image", zap.String("image", artifact.OciArtifactUrl), zap.Error(err))
-	//	err = fmt.Errorf("failed while fetching image: %s", err.Error())
-	//	return
-	//}
-
 	// Run the SYFT with spdx json
 	spdxCmd := exec.Command("syft", artifact.OciArtifactUrl, "--scope", "all-layers", "-o", "spdx-json")
 	spdxOutput, err := spdxCmd.CombinedOutput()
@@ -172,9 +168,17 @@ func ScanArtifact(esClient opengovernance.Client, logger *zap.Logger, artifact A
 	var cyclonedxSbom interface{}
 	err = json.Unmarshal(cyclonedxOutput, &cyclonedxSbom)
 
+	packages, err := GetPackageIDs(cyclonedxSbom)
+	if err != nil {
+		logger.Error("failed to get package ids", zap.Error(err))
+		err = fmt.Errorf("failed to get package ids: %s", err.Error())
+		return
+	}
+
 	result := ArtifactSbom{
 		ImageURL:          artifact.OciArtifactUrl,
 		ArtifactID:        artifact.ArtifactID,
+		Packages:          packages,
 		SbomSpdxJson:      spdxSbom,
 		SbomCyclonedxJson: cyclonedxSbom,
 	}
@@ -297,4 +301,54 @@ func GetArtifactsFromInlineQuery(coreServiceClient coreClient.CoreServiceClient,
 	} else {
 		return nil, fmt.Errorf("query id should be a string")
 	}
+}
+
+func GetPackageIDs(cyclonedxSbom interface{}) ([]string, error) {
+	sbomBytes, err := GetBytesFromInterface(cyclonedxSbom)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get bytes from SbomCyclonedxJson: %w", err)
+	}
+
+	bom := new(cyclonedx.BOM)
+	decoder := cyclonedx.NewBOMDecoder(bytes.NewReader(sbomBytes), cyclonedx.BOMFileFormatJSON)
+	err = decoder.Decode(bom)
+	if err != nil {
+		return nil, fmt.Errorf("decoding CycloneDX BOM: %w", err) // Return error
+	}
+
+	var packageIds []string
+	if bom.Components != nil {
+		for _, c := range *bom.Components {
+			packageIds = append(packageIds, fmt.Sprintf("%s:%s", c.Name, c.Version))
+		}
+	}
+	return packageIds, nil
+}
+
+func GetBytesFromInterface(source interface{}) ([]byte, error) {
+	var data []byte
+	var err error
+
+	switch content := source.(type) {
+	case []byte:
+		data = content
+	case string:
+		data = []byte(content)
+	case io.Reader:
+		data, err = io.ReadAll(content)
+		if err != nil {
+			return nil, fmt.Errorf("reading data (io.Reader): %w", err)
+		}
+	case map[string]interface{}:
+		data, err = json.Marshal(content)
+		if err != nil {
+			return nil, fmt.Errorf("cannot re-marshal map[string]interface{} to JSON: %w", err)
+		}
+	case nil:
+		return nil, fmt.Errorf("input source is nil")
+	default:
+		return nil, fmt.Errorf("unsupported input type for data source: %T", source)
+	}
+
+	return data, nil
 }

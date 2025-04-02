@@ -3,6 +3,7 @@ module github.com/opengovern/og-task-syft
 go 1.23.3
 
 require (
+	github.com/CycloneDX/cyclonedx-go v0.9.2
 	github.com/nats-io/nats.go v1.38.0
 	github.com/opencontainers/image-spec v1.1.0
 	github.com/opengovern/og-util v1.14.2
