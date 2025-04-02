@@ -1,10 +1,10 @@
 package task
 
 type ArtifactSbom struct {
-	ImageURL   string      `json:"image_url"`
-	ArtifactID string      `json:"artifact_id"`
-	SbomFormat string      `json:"sbom_format"`
-	Sbom       interface{} `json:"sbom"`
+	ImageURL          string      `json:"image_url"`
+	ArtifactID        string      `json:"artifact_id"`
+	SbomSpdxJson      interface{} `json:"sbom_spdx_json"`
+	SbomCyclonedxJson interface{} `json:"sbom_cyclonedx_json"`
 }
 
 func (r ArtifactSbom) UniqueID() string {

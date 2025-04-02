@@ -148,27 +148,35 @@ func ScanArtifact(esClient opengovernance.Client, logger *zap.Logger, artifact A
 	//	return
 	//}
 
-	// Run the Grype command
-	cmd := exec.Command("syft", artifact.OciArtifactUrl, "--scope", "all-layers", "-o", "spdx-json")
-
-	output, err := cmd.CombinedOutput()
-	logger.Info("output", zap.String("output", string(output)))
+	// Run the SYFT with spdx json
+	spdxCmd := exec.Command("syft", artifact.OciArtifactUrl, "--scope", "all-layers", "-o", "spdx-json")
+	spdxOutput, err := spdxCmd.CombinedOutput()
+	logger.Info("spdxOutput", zap.String("spdxOutput", string(spdxOutput)))
 	if err != nil {
 		logger.Error("failed while scanning image", zap.Error(err))
 		err = fmt.Errorf("failed while scanning image: %s", err.Error())
 		return
 	}
+	var spdxSbom interface{}
+	err = json.Unmarshal(spdxOutput, &spdxSbom)
 
-	var sbom interface{}
-	err = json.Unmarshal(output, &sbom)
-
-	logger.Info("sbom", zap.Any("sbom", sbom))
+	// Run the SYFT with spdx json
+	cyclonedxCmd := exec.Command("syft", artifact.OciArtifactUrl, "--scope", "all-layers", "-o", "cyclonedx-json")
+	cyclonedxOutput, err := cyclonedxCmd.CombinedOutput()
+	logger.Info("cyclonedxOutput", zap.String("cyclonedxOutput", string(cyclonedxOutput)))
+	if err != nil {
+		logger.Error("failed while scanning image", zap.Error(err))
+		err = fmt.Errorf("failed while scanning image: %s", err.Error())
+		return
+	}
+	var cyclonedxSbom interface{}
+	err = json.Unmarshal(cyclonedxOutput, &cyclonedxSbom)
 
 	result := ArtifactSbom{
-		ImageURL:   artifact.OciArtifactUrl,
-		ArtifactID: artifact.ArtifactID,
-		SbomFormat: "spdx",
-		Sbom:       sbom,
+		ImageURL:          artifact.OciArtifactUrl,
+		ArtifactID:        artifact.ArtifactID,
+		SbomSpdxJson:      spdxSbom,
+		SbomCyclonedxJson: cyclonedxSbom,
 	}
 
 	esResult := &es.TaskResult{
