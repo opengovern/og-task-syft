@@ -33,13 +33,13 @@ RUN apk --no-cache add ca-certificates docker-cli bash
 # RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 # USER appuser
 
-# Set working directory in the final image
-WORKDIR /app
-
 # Copy necessary files from the build stage
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=build /usr/local/bin/syft /usr/local/bin/syft
-COPY --from=build /app/og-task-syft /app/og-task-syft
+# Copy the application binary to the root directory in the final image
+COPY --from=build /app/og-task-syft /og-task-syft
 
-# Set the entrypoint to the Go application
-ENTRYPOINT ["/app/og-task-syft"]
+# Set the entrypoint to the Go application at the root
+ENTRYPOINT ["/og-task-syft"]
+
+# No WORKDIR needed if the binary is at root and doesn't expect a specific CWD

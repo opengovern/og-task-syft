@@ -479,6 +479,10 @@ func GetPackageIDs(cyclonedxSbom interface{}) ([]Package, error) {
 	// === Execute Core Logic ===
 	startTime := time.Now()
 	results, err := run(context.Background(), opts)
+	if err != nil {
+		log.Printf("Error running SBOM processing: %v", err)
+		return nil, fmt.Errorf("failed during SBOM processing: %w", err)
+	}
 	totalDuration := time.Since(startTime)
 
 	// === Final Summary Logging ===
