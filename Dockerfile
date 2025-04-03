@@ -2,7 +2,7 @@
 FROM golang:1.23-alpine AS build
 
 # Install required dependencies
-RUN apk --no-cache add ca-certificates curl git tar
+RUN apk --no-cache add ca-certificates curl git tar docker-cli
 
 # Install Grype (installs latest stable by default)
 RUN curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
@@ -23,6 +23,9 @@ COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
 # Copy Grype binary
 COPY --from=build /usr/local/bin/syft /usr/local/bin/syft
+
+# Copy Docker CLI binary
+COPY --from=build /usr/bin/docker /usr/bin/docker
 
 # Copy /tmp directory
 COPY --from=build /tmp /tmp

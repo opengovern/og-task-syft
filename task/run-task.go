@@ -5,6 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log"
+	"os/exec"
+	"runtime"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/CycloneDX/cyclonedx-go"
 	"github.com/opengovern/og-task-syft/envs"
 	authApi "github.com/opengovern/og-util/pkg/api"
@@ -19,14 +28,6 @@ import (
 	purl "github.com/package-url/packageurl-go"
 	"go.uber.org/zap"
 	"golang.org/x/net/context"
-	"io"
-	"log"
-	"os/exec"
-	"runtime"
-	"strconv"
-	"strings"
-	"sync"
-	"time"
 )
 
 type Artifact struct {
@@ -125,12 +126,21 @@ func RunTask(ctx context.Context, jq *jq.JobQueue, coreServiceEndpoint string, e
 }
 
 func ScanArtifact(esClient opengovernance.Client, logger *zap.Logger, artifact Artifact, request tasks.TaskRequest, taskResult *TaskResult) {
-	logger.Info("Fetching image", zap.String("image", artifact.OciArtifactUrl))
+	logger.Info("Scanning artifact", zap.String("image", artifact.OciArtifactUrl), zap.String("artifact_id", artifact.ArtifactID))
 
 	var err error
 	var index, id string
 
 	defer func() {
+		if r := recover(); r != nil {
+			// Log panic
+			logger.Error("Panic recovered during ScanArtifact", zap.Any("panic_info", r), zap.Stack("stacktrace"))
+			// Ensure error is set for the task result
+			if err == nil {
+				err = fmt.Errorf("panic occurred: %v", r)
+			}
+		}
+
 		if err == nil {
 			taskResult.Artifacts = append(taskResult.Artifacts, ArtifactResult{
 				OciArtifactUrl: artifact.OciArtifactUrl,
@@ -149,10 +159,108 @@ func ScanArtifact(esClient opengovernance.Client, logger *zap.Logger, artifact A
 		}
 	}()
 
-	// Run the SYFT with spdx json
-	spdxCmd := exec.Command("syft", artifact.OciArtifactUrl, "--scope", "all-layers", "-o", "spdx-json")
-	spdxOutput, err := spdxCmd.CombinedOutput()
-	logger.Info("spdxOutput", zap.String("spdxOutput", string(spdxOutput)))
+	// --- Docker Login via Task Parameters ---
+	usernameParam, userOk := request.TaskDefinition.Params["github_username"]
+	tokenParam, tokenOk := request.TaskDefinition.Params["github_token"]
+
+	if userOk && tokenOk {
+		username, userStrOk := usernameParam.(string)
+		token, tokenStrOk := tokenParam.(string)
+
+		if userStrOk && tokenStrOk && username != "" && token != "" {
+			logger.Info("Attempting docker login for ghcr.io using provided parameters", zap.String("username", username))
+			// Use docker login ... --password-stdin
+			cmd := exec.Command("docker", "login", "ghcr.io", "--username", username, "--password-stdin")
+
+			stdin, pipeErr := cmd.StdinPipe()
+			if pipeErr != nil {
+				logger.Error("Failed to get stdin pipe for docker login", zap.Error(pipeErr))
+				err = fmt.Errorf("failed to get stdin pipe for docker login: %w", pipeErr)
+				return // Exit ScanArtifact
+			}
+
+			var loginOutput bytes.Buffer
+			cmd.Stdout = &loginOutput
+			cmd.Stderr = &loginOutput // Capture both stdout and stderr
+
+			startErr := cmd.Start()
+			if startErr != nil {
+				logger.Error("Failed to start docker login command", zap.Error(startErr))
+				err = fmt.Errorf("failed to start docker login command: %w", startErr)
+				return // Exit ScanArtifact
+			}
+
+			// Write the token to stdin in a separate goroutine to avoid blocking
+			go func() {
+				defer func() {
+					if err := stdin.Close(); err != nil {
+						logger.Warn("Failed to close stdin pipe for docker login", zap.Error(err))
+					}
+				}()
+				_, writeErr := io.WriteString(stdin, token)
+				if writeErr != nil {
+					// Log the error, but let cmd.Wait() below handle the overall failure
+					logger.Error("Failed to write token to docker login stdin", zap.Error(writeErr))
+				}
+			}()
+
+			waitErr := cmd.Wait()
+			loginLog := logger.With(zap.String("output", loginOutput.String())) // Add output context
+			if waitErr != nil {
+				loginLog.Error("Docker login command failed", zap.Error(waitErr))
+				// Assign error to the 'err' variable captured by the defer func.
+				err = fmt.Errorf("docker login failed for user %s: %w. Output: %s", username, waitErr, loginOutput.String())
+				return // Exit ScanArtifact if login fails
+			} else {
+				loginLog.Info("Docker login succeeded")
+			}
+		} else {
+			logger.Info("github_username or github_token parameters provided but are empty or not strings. Skipping docker login.")
+		}
+	} else {
+		logger.Info("github_username or github_token parameters not found in request. Relying on existing docker credentials.")
+	}
+
+	// --- Syft Execution with Platform Fallback ---
+
+	// Helper function to run syft with platform fallback
+	runSyft := func(format string) ([]byte, error) {
+		baseArgs := []string{artifact.OciArtifactUrl, "--scope", "all-layers", "-o", format}
+
+		// Attempt 1: Run without explicit platform
+		cmd := exec.Command("syft", baseArgs...)
+		logger.Info("Running syft (attempt 1)", zap.String("command", cmd.String()))
+		output, attempt1Err := cmd.CombinedOutput()
+		if attempt1Err == nil {
+			logger.Info("Syft initial attempt succeeded", zap.String("format", format))
+			return output, nil // Success on first try
+		}
+
+		// Check if error is the specific platform error
+		errMsg := string(output) // CombinedOutput includes stderr
+		if strings.Contains(errMsg, "no child with platform") {
+			logger.Warn("Syft failed (attempt 1) with platform error, retrying with --platform linux/amd64", zap.String("original_error_output", errMsg))
+			// Attempt 2: Run with --platform linux/amd64
+			amd64Args := append([]string{"--platform", "linux/amd64"}, baseArgs...)
+			cmd = exec.Command("syft", amd64Args...)
+			logger.Info("Running syft (attempt 2 - fallback)", zap.String("command", cmd.String()))
+			output, attempt2Err := cmd.CombinedOutput()
+			if attempt2Err == nil {
+				logger.Info("Syft fallback attempt succeeded", zap.String("format", format))
+				return output, nil // Success on fallback try
+			}
+			// Fallback failed, return the error from the fallback attempt
+			logger.Error("Syft fallback attempt (attempt 2) also failed", zap.Error(attempt2Err), zap.String("output", string(output)))
+			return nil, fmt.Errorf("syft fallback scan failed (%s): %w; Output: %s", format, attempt2Err, string(output))
+		}
+
+		// Original command failed for a different reason (not platform error)
+		logger.Error("Syft initial scan failed (attempt 1)", zap.Error(attempt1Err), zap.String("output", errMsg))
+		return nil, fmt.Errorf("syft initial scan failed (%s): %w; Output: %s", format, attempt1Err, errMsg)
+	}
+
+	// Run Syft for SPDX JSON
+	spdxOutput, err := runSyft("spdx-json")
 	if err != nil {
 		logger.Error("failed while scanning image", zap.Error(err))
 		err = fmt.Errorf("failed while scanning image: %s", err.Error())
@@ -160,23 +268,36 @@ func ScanArtifact(esClient opengovernance.Client, logger *zap.Logger, artifact A
 	}
 	var spdxSbom interface{}
 	err = json.Unmarshal(spdxOutput, &spdxSbom)
-
-	// Run the SYFT with spdx json
-	cyclonedxCmd := exec.Command("syft", artifact.OciArtifactUrl, "--scope", "all-layers", "-o", "cyclonedx-json")
-	cyclonedxOutput, err := cyclonedxCmd.CombinedOutput()
-	logger.Info("cyclonedxOutput", zap.String("cyclonedxOutput", string(cyclonedxOutput)))
 	if err != nil {
-		logger.Error("failed while scanning image", zap.Error(err))
-		err = fmt.Errorf("failed while scanning image: %s", err.Error())
+		logger.Error("Failed to unmarshal spdx-json output", zap.Error(err), zap.String("raw_output", string(spdxOutput)))
+		err = fmt.Errorf("failed to unmarshal spdx-json output: %w", err)
+		return
+	}
+	logger.Info("Successfully generated SPDX SBOM")
+
+	// Run Syft for CycloneDX JSON
+	cyclonedxOutput, err := runSyft("cyclonedx-json")
+	if err != nil {
+		// Error is already logged and formatted by runSyft
+		// The defer function will capture and report this error
 		return
 	}
 	var cyclonedxSbom interface{}
 	err = json.Unmarshal(cyclonedxOutput, &cyclonedxSbom)
+	if err != nil {
+		logger.Error("Failed to unmarshal cyclonedx-json output", zap.Error(err), zap.String("raw_output", string(cyclonedxOutput)))
+		err = fmt.Errorf("failed to unmarshal cyclonedx-json output: %w", err)
+		return
+	}
+	logger.Info("Successfully generated CycloneDX SBOM")
+
+	// --- Process SBOMs and Store Results ---
 
 	packages, err := GetPackageIDs(cyclonedxSbom)
 	if err != nil {
-		logger.Error("failed to get package ids", zap.Error(err))
-		err = fmt.Errorf("failed to get package ids: %s", err.Error())
+		// Error already includes context from GetPackageIDs
+		logger.Error("Failed to get package IDs from CycloneDX SBOM", zap.Error(err))
+		// Defer will capture this error
 		return
 	}
 
