@@ -10,7 +10,7 @@ require (
 	github.com/nats-io/nats.go v1.38.0
 	github.com/opencontainers/image-spec v1.1.0
 	github.com/opengovern/og-util v1.15.1
-	github.com/opengovern/opensecurity v0.0.0-20250409143052-53a95d2fcb8b
+	github.com/opengovern/opensecurity v0.0.0-20250415130408-091defcde170
 	github.com/opengovern/resilient-bridge v0.0.0-20241215000157-ad74ef2e3cbe
 	github.com/opensearch-project/opensearch-go/v2 v2.3.0
 	github.com/spf13/cobra v1.8.1
