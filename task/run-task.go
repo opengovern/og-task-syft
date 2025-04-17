@@ -55,14 +55,18 @@ func RunTask(ctx context.Context, jq *jq.JobQueue, coreServiceEndpoint string, e
 	var err error
 	if _, ok := request.TaskDefinition.Params["query_id"]; ok {
 		inventoryClient := coreClient.NewCoreServiceClient(coreServiceEndpoint)
-		artifacts, err = GetArtifactsFromQueryID(inventoryClient, request.TaskDefinition.Params)
+		artifacts, err = WithRetry(func() ([]Artifact, error) {
+			return GetArtifactsFromQueryID(inventoryClient, request.TaskDefinition.Params)
+		})
 		if err != nil {
 			err = fmt.Errorf("failed getting artifacts from query by id: %s", err.Error())
 			return err
 		}
 	} else if _, ok := request.TaskDefinition.Params["query_to_execute"]; ok {
 		inventoryClient := coreClient.NewCoreServiceClient(coreServiceEndpoint)
-		artifacts, err = GetArtifactsFromInlineQuery(inventoryClient, request.TaskDefinition.Params)
+		artifacts, err = WithRetry(func() ([]Artifact, error) {
+			return GetArtifactsFromInlineQuery(inventoryClient, request.TaskDefinition.Params)
+		})
 		if err != nil {
 			err = fmt.Errorf("failed getting artifacts from inline query: %s", err.Error())
 			return err
