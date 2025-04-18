@@ -50,6 +50,8 @@ type TaskResult struct {
 }
 
 func RunTask(ctx context.Context, jq *jq.JobQueue, coreServiceEndpoint string, esClient opengovernance.Client, logger *zap.Logger, request tasks.TaskRequest, response *scheduler.TaskResponse) error {
+	logger.Info("==== RUNNING TASK V2 ====")
+
 	var artifacts []Artifact
 	var artifactsUrls []string
 	var err error
@@ -81,7 +83,7 @@ func RunTask(ctx context.Context, jq *jq.JobQueue, coreServiceEndpoint string, e
 		for _, artifact := range artifactsInterface {
 			artifactMap, ok := artifact.(map[string]interface{})
 			if !ok {
-				panic(fmt.Errorf("artifact is not a map[string]interface{}"))
+				return fmt.Errorf("artifact is not a map[string]interface{}")
 			}
 
 			var a Artifact
@@ -188,7 +190,11 @@ func RunTask(ctx context.Context, jq *jq.JobQueue, coreServiceEndpoint string, e
 	}
 
 	for _, artifact := range artifacts {
-		ScanArtifact(esClient, logger, artifact, request, taskResult)
+		err = ScanArtifact(esClient, logger, artifact, request, taskResult)
+		if err != nil {
+			logger.Warn("failed to scan artifact", zap.String("artifact", artifact.OciArtifactUrl), zap.Error(err))
+			continue
+		}
 		jsonBytes, err := json.Marshal(taskResult)
 		if err != nil {
 			return err
@@ -215,7 +221,7 @@ func RunTask(ctx context.Context, jq *jq.JobQueue, coreServiceEndpoint string, e
 	return nil
 }
 
-func ScanArtifact(esClient opengovernance.Client, logger *zap.Logger, artifact Artifact, request tasks.TaskRequest, taskResult *TaskResult) {
+func ScanArtifact(esClient opengovernance.Client, logger *zap.Logger, artifact Artifact, request tasks.TaskRequest, taskResult *TaskResult) error {
 	logger.Info("Scanning artifact", zap.String("image", artifact.OciArtifactUrl), zap.String("artifact_id", artifact.ArtifactID))
 
 	var err error
@@ -290,30 +296,29 @@ func ScanArtifact(esClient opengovernance.Client, logger *zap.Logger, artifact A
 	if err != nil {
 		logger.Error("failed while scanning image", zap.Error(err))
 		err = fmt.Errorf("failed while scanning image: %s", err.Error())
-		return
+		return err
 	}
 	var spdxSbom interface{}
 	err = json.Unmarshal(spdxOutput, &spdxSbom)
 	if err != nil {
 		logger.Error("Failed to unmarshal spdx-json output", zap.Error(err), zap.String("raw_output", string(spdxOutput)))
 		err = fmt.Errorf("failed to unmarshal spdx-json output: %w", err)
-		return
+		return err
 	}
 	logger.Info("Successfully generated SPDX SBOM")
 
 	// Run Syft for CycloneDX JSON
 	cyclonedxOutput, err := runSyft("cyclonedx-json")
 	if err != nil {
-		// Error is already logged and formatted by runSyft
-		// The defer function will capture and report this error
-		return
+		logger.Error("failed while scanning image", zap.Error(err))
+		return err
 	}
 	var cyclonedxSbom interface{}
 	err = json.Unmarshal(cyclonedxOutput, &cyclonedxSbom)
 	if err != nil {
 		logger.Error("Failed to unmarshal cyclonedx-json output", zap.Error(err), zap.String("raw_output", string(cyclonedxOutput)))
 		err = fmt.Errorf("failed to unmarshal cyclonedx-json output: %w", err)
-		return
+		return err
 	}
 	logger.Info("Successfully generated CycloneDX SBOM")
 
@@ -324,7 +329,7 @@ func ScanArtifact(esClient opengovernance.Client, logger *zap.Logger, artifact A
 		// Error already includes context from GetPackageIDs
 		logger.Error("Failed to get package IDs from CycloneDX SBOM", zap.Error(err))
 		// Defer will capture this error
-		return
+		return err
 	}
 
 	result := ArtifactSbom{
@@ -355,7 +360,7 @@ func ScanArtifact(esClient opengovernance.Client, logger *zap.Logger, artifact A
 	if err != nil {
 		logger.Error("failed sending data to OpenSearch", zap.Error(err))
 		err = fmt.Errorf("failed sending data to OpenSearch: %s", err.Error())
-		return
+		return err
 	}
 	index = idx
 	id = es.HashOf(keys...)
@@ -387,10 +392,12 @@ func ScanArtifact(esClient opengovernance.Client, logger *zap.Logger, artifact A
 	if err != nil {
 		logger.Error("failed sending data to OpenSearch", zap.Error(err))
 		err = fmt.Errorf("failed sending data to OpenSearch: %s", err.Error())
-		return
+		return err
 	}
 	index = idx
 	id = es.HashOf(keys...)
+
+	return nil
 }
 
 func GetArtifactsFromQueryID(coreServiceClient coreClient.CoreServiceClient, params map[string]any) ([]Artifact, error) {
