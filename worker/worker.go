@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/opengovern/og-task-syft/envs"
 	"github.com/opengovern/og-task-syft/task"
@@ -131,18 +132,40 @@ func (w *Worker) ProcessMessage(ctx context.Context, msg jetstream.Msg) (err err
 		RunID:  request.TaskDefinition.RunID,
 		Status: models.TaskRunStatusInProgress,
 	}
+	var responseJson []byte
+
+	canceled := false
+	ctxWithCancel, cancel := context.WithCancel(ctx)
+	cancelSubject := tasks.GetTaskRunCancelSubject(envs.TopicName, request.TaskDefinition.RunID)
+	subscription, err := w.jq.Subscribe(cancelSubject, func(m *nats.Msg) {
+		canceled = true
+		cancel()
+	})
+	if err != nil {
+		w.logger.Error("failed to subscribe to results", zap.Error(err))
+		return err
+	} else {
+		defer func() {
+			sErr := subscription.Unsubscribe()
+			if sErr != nil {
+				w.logger.Error("failed to unsubscribe from results", zap.Error(sErr))
+			}
+		}()
+	}
 
 	defer func() {
-		if err != nil {
+		if canceled {
+			response.Status = models.TaskRunStatusCancelled
+		} else if err != nil {
 			response.FailureMessage = err.Error()
 			response.Status = models.TaskRunStatusFailed
 		} else {
 			response.Status = models.TaskRunStatusFinished
 		}
 
-		responseJson, err := json.Marshal(response)
-		if err != nil {
-			w.logger.Error("failed to create job result json", zap.Error(err))
+		responseJson, marshalErr := json.Marshal(response)
+		if marshalErr != nil {
+			w.logger.Error("failed to create job result json", zap.Error(marshalErr))
 			return
 		}
 
@@ -151,7 +174,7 @@ func (w *Worker) ProcessMessage(ctx context.Context, msg jetstream.Msg) (err err
 		}
 	}()
 
-	responseJson, err := json.Marshal(response)
+	responseJson, err = json.Marshal(response)
 	if err != nil {
 		w.logger.Error("failed to create response json", zap.Error(err))
 		return err
@@ -161,7 +184,7 @@ func (w *Worker) ProcessMessage(ctx context.Context, msg jetstream.Msg) (err err
 		w.logger.Error("failed to publish job in progress", zap.String("response", string(responseJson)), zap.Error(err))
 	}
 
-	err = task.RunTask(ctx, w.jq, envs.InventoryServiceEndpoint, w.esClient, w.logger, request, response)
+	err = task.RunTask(ctxWithCancel, w.jq, envs.InventoryServiceEndpoint, w.esClient, w.logger, request, response)
 	if err != nil {
 		w.logger.Error("failed to publish job result", zap.String("response", string(responseJson)), zap.Error(err))
 		return err

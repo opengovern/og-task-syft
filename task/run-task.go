@@ -189,26 +189,32 @@ func RunTask(ctx context.Context, jq *jq.JobQueue, coreServiceEndpoint string, e
 		logger.Info("github_username or github_token parameters not found in request. Relying on existing docker credentials.")
 	}
 
-	for _, artifact := range artifacts {
-		err = ScanArtifact(esClient, logger, artifact, request, taskResult)
-		if err != nil {
-			logger.Warn("failed to scan artifact", zap.String("artifact", artifact.OciArtifactUrl), zap.Error(err))
-			continue
-		}
-		jsonBytes, err := json.Marshal(taskResult)
-		if err != nil {
-			return err
-		}
-		response.Result = jsonBytes
+	for i, artifact := range artifacts {
+		select {
+		case <-ctx.Done():
+			logger.Warn("Context Cancelled, stopping artifact scanning", zap.Int("processedArtifacts", i))
+			return ctx.Err()
+		default:
+			err = ScanArtifact(esClient, logger, artifact, request, taskResult)
+			if err != nil {
+				logger.Warn("failed to scan artifact", zap.String("artifact", artifact.OciArtifactUrl), zap.Error(err))
+				continue
+			}
+			jsonBytes, err := json.Marshal(taskResult)
+			if err != nil {
+				return err
+			}
+			response.Result = jsonBytes
 
-		responseJson, err := json.Marshal(response)
-		if err != nil {
-			logger.Error("failed Marshaling task result", zap.Error(err))
-			err = fmt.Errorf("failed Marshaling task result: %s", err.Error())
-			return err
-		}
-		if _, err := jq.Produce(ctx, envs.ResultTopicName, responseJson, fmt.Sprintf("task-run-update-%s-%d", artifact.ArtifactID, request.TaskDefinition.RunID)); err != nil {
-			logger.Error("failed to publish job result", zap.String("jobResult", string(responseJson)), zap.Error(err))
+			responseJson, err := json.Marshal(response)
+			if err != nil {
+				logger.Error("failed Marshaling task result", zap.Error(err))
+				err = fmt.Errorf("failed Marshaling task result: %s", err.Error())
+				return err
+			}
+			if _, err := jq.Produce(ctx, envs.ResultTopicName, responseJson, fmt.Sprintf("task-run-update-%s-%d", artifact.ArtifactID, request.TaskDefinition.RunID)); err != nil {
+				logger.Error("failed to publish job result", zap.String("jobResult", string(responseJson)), zap.Error(err))
+			}
 		}
 	}
 	jsonBytes, err := json.Marshal(taskResult)
